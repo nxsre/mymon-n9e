@@ -18,7 +18,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/n9e/mymon/common"
+	"github.com/nxsre/mymon-n9e/common"
 
 	"github.com/ziutek/mymysql/mysql"
 )
@@ -309,7 +309,7 @@ func NewMetric(conf *common.Config, name string) *MetaData {
 		CounterType: dataType(name),
 		Tags:        Tag,
 		Timestamp:   time.Now().Unix(),
-		Step:        60,
+		Step:        conf.Base.Step,
 	}
 }
 

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n9e/mymon/common"
+	"github.com/nxsre/mymon-n9e/common"
 
 	"github.com/ziutek/mymysql/mysql"
 	_ "github.com/ziutek/mymysql/native"
@@ -250,17 +250,17 @@ func parseMySQLStatus(conf *common.Config, db mysql.Conn, sql string) ([]*MetaDa
 
 func parseInnodbSection(
 	conf *common.Config, row string, section string,
-	pdata *[]*MetaData, longTranTime *int) error {
+	pdata *[]*MetaData, longTranTime *float64) error {
 	var err error
 	switch section {
 	case "TRANSACTIONS":
 		txPrefixes := []string{"ACTIVE ", "ACTIVE (PREPARED) "}
 		for _, txPrefix := range txPrefixes {
 			if strings.Contains(row, txPrefix) {
-				var tmpLongTransactionTime int
+				var tmpLongTransactionTime float64
 				secString := strings.Split(strings.Split(
 					row, txPrefix)[1], " sec")[0]
-				tmpLongTransactionTime, err = strconv.Atoi(secString)
+				tmpLongTransactionTime, err = strconv.ParseFloat(secString,10)
 				if err != nil {
 					continue
 				}
@@ -337,7 +337,7 @@ func parseInnodbSection(
 
 func parseInnodbStatus(conf *common.Config, rows []string) ([]*MetaData, error) {
 	var section string
-	longTranTime := 0
+	var longTranTime float64
 	var err error
 	var data []*MetaData
 	for _, row := range rows {

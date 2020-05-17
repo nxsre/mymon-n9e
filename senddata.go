@@ -22,8 +22,9 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/n9e/mymon/common"
+	"github.com/nxsre/mymon-n9e/common"
 )
 
 // SendData Post the json of all result to falcon-agent
@@ -37,8 +38,13 @@ func SendData(conf *common.Config, data []*MetaData) ([]byte, error) {
 	for _, m := range data {
 		Log.Info("%v", m)
 	}
-
-	res, err := http.Post(conf.Base.FalconClient, "application/json", bytes.NewBuffer(js))
+	tr := &http.Transport{
+		MaxIdleConns:       10,
+		IdleConnTimeout:    30 * time.Second,
+		DisableCompression: true,
+	}
+	client := &http.Client{Transport: tr, Timeout: 15 * time.Second}
+	res, err := client.Post(conf.Base.FalconClient, "application/json", bytes.NewBuffer(js))
 	if err != nil {
 		Log.Debug("send data to falcon-agent error: %+v", err)
 		return nil, err

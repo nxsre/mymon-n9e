@@ -14,8 +14,8 @@ mymon(MySQL-Monitor) 是夜莺用来监控MySQL数据库运行状态的一个插
 
 ```bash
 # Build
-go get -u github.com/n9e/mymon
-cd $GOPATH/src/github.com/n9e/mymon
+go get -u github.com/nxsre/mymon
+cd $GOPATH/src/github.com/nxsre/mymon
 make
 
 # Add to crontab

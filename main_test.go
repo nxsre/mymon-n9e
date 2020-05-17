@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n9e/mymon/common"
+	"github.com/nxsre/mymon-n9e/common"
 	"github.com/stretchr/testify/assert"
 )
 

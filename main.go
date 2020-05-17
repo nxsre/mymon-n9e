@@ -16,15 +16,19 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/nxsre/mymon-n9e/common"
 	"io"
+	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
-	"github.com/n9e/mymon/common"
-
 	"github.com/astaxie/beego/logs"
+	"github.com/robfig/cron/v3"
 	"github.com/ziutek/mymysql/mysql"
 	_ "github.com/ziutek/mymysql/native"
+	_ "net/http/pprof"
 )
 
 // Global tag var
@@ -40,9 +44,13 @@ var Log *logs.BeeLogger
 func main() {
 	// parse config file
 	var confFile string
-	flag.StringVar(&confFile, "c", "myMon.cfg", "myMon configure file")
+	var confDir string
+	flag.StringVar(&confFile, "c", "", "myMon configure file")
+	flag.StringVar(&confDir, "d", "etc", "myMon configure directory")
 	version := flag.Bool("v", false, "show version")
+	pprof := flag.Bool("pprof", false, "")
 	flag.Parse()
+
 	if *version {
 		fmt.Println(fmt.Sprintf("%10s: %s", "Version", Version))
 		fmt.Println(fmt.Sprintf("%10s: %s", "Compile", Compile))
@@ -50,6 +58,45 @@ func main() {
 		fmt.Println(fmt.Sprintf("%10s: %d", "GitDirty", GitDirty))
 		os.Exit(0)
 	}
+
+	if *pprof {
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+	}
+
+	c := cron.New(cron.WithParser(
+		cron.NewParser(cron.SecondOptional|cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow|cron.Descriptor)),
+		cron.WithLogger(cron.VerbosePrintfLogger(log.New(os.Stderr, "", log.LstdFlags))))
+	spec := "*/30 * * * * *"
+	c.AddFunc(spec, func() {
+		if confFile != "" {
+			go monitor(confFile)
+		} else if confDir != "" {
+			err := filepath.Walk(confDir, func(confFile string, f os.FileInfo, err error) error {
+				if f == nil {
+					return err
+				}
+				if f.IsDir() {
+					return nil
+				}
+				go monitor(confFile)
+				return nil
+			})
+			if err != nil {
+				log.Fatalln(err)
+			}
+		} else {
+			log.Fatalln("The configuration file does not exist!")
+		}
+	})
+	c.Start()
+	log.Println("run")
+
+	select {}
+}
+
+func monitor(confFile string) {
 	conf, err := common.NewConfig(confFile)
 	if err != nil {
 		fmt.Printf("NewConfig Error: %s\n", err.Error())
@@ -81,19 +128,19 @@ func main() {
 	defer func() { _ = db.Close() }()
 
 	// start...
-	Log.Info("MySQL Monitor for falcon")
-	go timeout()
-	err = fetchData(conf, db)
-	if err != nil && err != io.EOF {
-		Log.Error("Error: %s", err.Error())
+	Log.Notice("MySQL Monitor for falcon")
+	t := time.NewTicker(time.Second * TimeOut)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		Log.Error("Timeout")
+	default:
+		err = fetchData(conf, db)
+		if err != nil && err != io.EOF {
+			Log.Error("Error: %s", err.Error())
+		}
 	}
-}
 
-func timeout() {
-	time.AfterFunc(TimeOut*time.Second, func() {
-		Log.Error("Execute timeout")
-		os.Exit(1)
-	})
 }
 
 func fetchData(conf *common.Config, db mysql.Conn) (err error) {
