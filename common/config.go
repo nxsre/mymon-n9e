@@ -29,7 +29,6 @@ type BaseConf struct {
 	EndpointShell string
 	LogFile       string
 	LogLevel      int
-	Step          int64
 	FalconClient  string
 }
 
@@ -92,10 +91,7 @@ func readConf(file string) (conf Config, err error) {
 		port = 3306
 		err = nil
 	}
-	step, err := cfg.Section("default").Key("step").Int64()
-	if err != nil {
-		step = 60
-	}
+
 	conf = Config{
 		BaseConf{
 			BaseDir:       cfg.Section("default").Key("basedir").String(),
@@ -106,7 +102,6 @@ func readConf(file string) (conf Config, err error) {
 			EndpointShell: cfg.Section("default").Key("endpoint_shell").String(),
 			LogLevel:      logLevel,
 			FalconClient:  cfg.Section("default").Key("n9e_api").String(),
-			Step:          step,
 		},
 		DatabaseConf{
 			User:     cfg.Section("mysql").Key("user").String(),

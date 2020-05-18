@@ -45,8 +45,9 @@ func SendData(conf *common.Config, data []*MetaData) ([]byte, error) {
 	}
 	client := &http.Client{Transport: tr, Timeout: 15 * time.Second}
 	res, err := client.Post(conf.Base.FalconClient, "application/json", bytes.NewBuffer(js))
+	Log.Debug("%s", string(js))
 	if err != nil {
-		Log.Debug("send data to falcon-agent error: %+v", err)
+		Log.Error("send data to falcon-agent error: %+v", err)
 		return nil, err
 	}
 

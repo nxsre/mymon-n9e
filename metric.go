@@ -309,7 +309,7 @@ func NewMetric(conf *common.Config, name string) *MetaData {
 		CounterType: dataType(name),
 		Tags:        Tag,
 		Timestamp:   time.Now().Unix(),
-		Step:        conf.Base.Step,
+		Step:        step,
 	}
 }
 

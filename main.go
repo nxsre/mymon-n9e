@@ -17,11 +17,13 @@ import (
 	"flag"
 	"fmt"
 	"github.com/nxsre/mymon-n9e/common"
+	"github.com/panjf2000/ants/v2"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/astaxie/beego/logs"
@@ -36,19 +38,34 @@ var (
 	IsSlave    int
 	IsReadOnly int
 	Tag        string
+	step       int64
 )
 
 //Log logger of project
 var Log *logs.BeeLogger
 
 func main() {
+
+	// init log and other necessary
+	Log = logs.NewLogger(0)
+	Log.EnableFuncCallDepth(true)
+
 	// parse config file
 	var confFile string
 	var confDir string
+	var threads int
+	var pprofAddr string
+	var logLevel int
+	var logFile string
 	flag.StringVar(&confFile, "c", "", "myMon configure file")
 	flag.StringVar(&confDir, "d", "etc", "myMon configure directory")
+	flag.IntVar(&threads, "t", runtime.NumCPU(), "the number of threads for multiple instance")
+	flag.IntVar(&logLevel, "log-level", 5, "set log level")
+	flag.Int64Var(&step, "step", 60, "set step")
+	flag.StringVar(&logFile, "log-file", "mymon.log", "set log file")
 	version := flag.Bool("v", false, "show version")
-	pprof := flag.Bool("pprof", false, "")
+	pprof := flag.Bool("pprof", false, "enable pprof")
+	flag.StringVar(&pprofAddr, "pprof-addr", "localhost:6060", "customize the pprof listening address")
 	flag.Parse()
 
 	if *version {
@@ -61,17 +78,39 @@ func main() {
 
 	if *pprof {
 		go func() {
-			log.Println(http.ListenAndServe("localhost:6060", nil))
+			http.ListenAndServe(pprofAddr, nil)
 		}()
 	}
+
+	Log.SetLevel(logLevel)
+	//_ = Log.SetLogger("console")
+	_ = Log.SetLogger(
+		"file", fmt.Sprintf(
+			`{"filename":"%s", "level":%d, "maxlines":0,
+					"maxsize":0, "daily":false, "maxdays":0}`,
+			logFile, logLevel))
 
 	c := cron.New(cron.WithParser(
 		cron.NewParser(cron.SecondOptional|cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow|cron.Descriptor)),
 		cron.WithLogger(cron.VerbosePrintfLogger(log.New(os.Stderr, "", log.LstdFlags))))
-	spec := "*/30 * * * * *"
+	spec := fmt.Sprintf("*/%d * * * * *", step)
+
+	defer ants.Release()
+	p, _ := ants.NewPoolWithFunc(threads, func(i interface{}) {
+		monitor(i.(string))
+	})
+	defer p.Release()
+
+	go func() {
+		for {
+			Log.Debug("Cap: %d, Free: %d, Running: %d", p.Cap(), p.Free(), p.Running())
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	c.AddFunc(spec, func() {
 		if confFile != "" {
-			go monitor(confFile)
+			monitor(confFile)
 		} else if confDir != "" {
 			err := filepath.Walk(confDir, func(confFile string, f os.FileInfo, err error) error {
 				if f == nil {
@@ -80,7 +119,9 @@ func main() {
 				if f.IsDir() {
 					return nil
 				}
-				go monitor(confFile)
+
+				_ = p.Invoke(confFile)
+				//go monitor(confFile)
 				return nil
 			})
 			if err != nil {
@@ -117,23 +158,27 @@ func monitor(confFile string) {
 		}
 	}
 
-	// init log and other necessary
-	Log = common.MyNewLogger(conf, common.CompatibleLog(conf))
-
 	db, err := common.NewMySQLConnection(conf)
 	if err != nil {
-		fmt.Printf("NewMySQLConnection Error: %s\n", err.Error())
+		fmt.Printf("NewMySQLConnection %s:%d Error: %s\n", conf.DataBase.Host, conf.DataBase.Port, err.Error())
 		return
 	}
-	defer func() { _ = db.Close() }()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	// start...
-	Log.Notice("MySQL Monitor for falcon")
+	Log.Notice("MySQL Monitor for falcon %s starting", db.NetConn().RemoteAddr())
+	start := time.Now()
+	defer func() {
+		Log.Notice("MySQL Monitor for falcon %s finished, Elapsed time:%s", db.NetConn().RemoteAddr(), time.Now().Sub(start))
+	}()
 	t := time.NewTicker(time.Second * TimeOut)
 	defer t.Stop()
 	select {
 	case <-t.C:
 		Log.Error("Timeout")
+		return
 	default:
 		err = fetchData(conf, db)
 		if err != nil && err != io.EOF {
